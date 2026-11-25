@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Flashcard Maker — Paste notes, get flashcards (free, Anki-ready)</title>
+<meta name="description" content="Paste your notes, get flashcards to study from — free, and they work in Anki too. Optional AI generation with your own free Gemini key.">
+<style>
+  :root { --bg:#0f1115; --card:#1a1e27; --line:#2a3040; --text:#f3f4f6; --muted:#9aa3b2; --amber:#f59e0b; --amber-d:#d97706; --green:#34d399; --red:#f87171; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); line-height:1.5; }
+  main { max-width:860px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:1.9rem; margin:0 0 4px; }
+  h1 span { color:var(--amber); }
+  .pitch { color:var(--muted); margin:0 0 20px; font-size:1.05rem; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  h2 { font-size:1.05rem; margin:0 0 10px; }
+  label { display:block; font-size:.9rem; color:var(--muted); margin:10px 0 4px; }
+  textarea, input[type=text], input[type=password] { width:100%; background:#0f1115; border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px; font:inherit; }
+  textarea { min-height:170px; resize:vertical; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  button { background:var(--amber); color:#111; border:0; border-radius:8px; padding:10px 16px; font:inherit; font-weight:600; cursor:pointer; }
+  button:hover { background:var(--amber-d); color:#fff; }
+  button.secondary { background:#2a3040; color:var(--text); }
+  button.secondary:hover { background:#39415a; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .hint { font-size:.85rem; color:var(--muted); margin:8px 0 0; }
+  .status { font-size:.9rem; margin-top:10px; min-height:1.4em; }
+  .status.ok { color:var(--green); } .status.err { color:var(--red); }
+  /* Flashcard */
+  .flashcard { background:#232936; border:1px solid var(--line); border-radius:14px; min-height:190px; display:flex; align-items:center; justify-content:center; text-align:center; padding:28px; cursor:pointer; font-size:1.25rem; user-select:none; }
+  .flashcard:hover { border-color:var(--amber); }
+  .flashcard .side { font-size:.75rem; letter-spacing:.12em; text-transform:uppercase; color:var(--amber); display:block; margin-bottom:10px; }
+  .nav { display:flex; align-items:center; justify-content:space-between; margin-top:12px; gap:8px; flex-wrap:wrap; }
+  .counter { color:var(--muted); font-size:.9rem; }
+  .bar { height:6px; background:#2a3040; border-radius:3px; margin-top:12px; overflow:hidden; }
+  .bar > div { height:100%; background:var(--amber); width:0; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  @media (max-width:560px){ .grid2{ grid-template-columns:1fr; } h1{ font-size:1.5rem; } }
+  details { font-size:.9rem; color:var(--muted); }
+  details summary { cursor:pointer; color:var(--text); font-weight:600; }
+  code { background:#0f1115; padding:1px 5px; border-radius:4px; }
+  footer { color:var(--muted); font-size:.85rem; margin-top:24px; }
+  footer a { color:var(--amber); }
+  .support { display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-top:16px; }
+  .support img { display:block; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🃏 AI <span>Flashcard Maker</span></h1>
+  <p class="pitch">Paste your notes, get flashcards to study from — free, and they work in Anki too.</p>
+
+  <section class="panel">
+    <h2>1. Your notes</h2>
+    <label for="notes">Paste study notes — one fact per line works best.</label>
+    <textarea id="notes" placeholder="Q: Who wrote Pride and Prejudice?&#10;A: Jane Austen&#10;&#10;Or: Term - definition&#10;Or: plain paragraphs — the tool makes fill-in-the-blank cards from them."></textarea>
+    <div class="row">
+      <button id="btn-make">Make flashcards</button>
+      <button id="btn-sample" class="secondary">Load sample deck</button>
+    </div>
+    <p class="hint">Formats understood: <code>Q: … / A: …</code>, <code>Term - definition</code>, <code>Term: definition</code>, <code>Front | Back</code>, or plain paragraphs (cloze cards). No account, nothing uploaded — parsing happens in your browser.</p>
+    <div id="status-notes" class="status" aria-live="polite"></div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Study</h2>
+    <div class="flashcard" id="card" tabindex="0" role="button" aria-label="Flashcard — click to flip">
+      <div><span class="side" id="card-side">Front</span><span id="card-text">No cards yet — make some above, or load the sample deck.</span></div>
+    </div>
+    <div class="bar"><div id="bar-fill"></div></div>
+    <div class="nav">
+      <button id="btn-prev" class="secondary">← Prev</button>
+      <span class="counter" id="counter">0 / 0</span>
+      <button id="btn-next" class="secondary">Next →</button>
+      <button id="btn-shuffle" class="secondary">Shuffle</button>
+    </div>
+    <p class="hint">Click the card (or press Space) to flip. ← → keys move between cards.</p>
+  </section>
+
+  <section class="panel">
+    <h2>3. Add a card by hand</h2>
+    <div class="grid2">
+      <div><label for="manual-front">Front</label><input type="text" id="manual-front" placeholder="Question or term"></div>
+      <div><label for="manual-back">Back</label><input type="text" id="manual-back" placeholder="Answer or definition"></div>
+    </div>
+    <div class="row"><button id="btn-add" class="secondary">Add card</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>4. Export to Anki</h2>
+    <div class="row">
+      <button id="btn-export">Download Anki CSV</button>
+    </div>
+    <p class="hint">Import in Anki: File → Import → pick the CSV → field separator <b>Comma</b> → map field 1 to Front, field 2 to Back. Works with Anki desktop, AnkiMobile and AnkiDroid.</p>
+  </section>
+
+  <section class="panel">
+    <h2>5. AI generation (optional)</h2>
+    <label for="gemini-key">Your free Gemini API key (bring your own — optional)</label>
+    <input type="password" id="gemini-key" placeholder="Your Gemini API key…" autocomplete="off">
+    <div class="row">
+      <button id="btn-save-key" class="secondary">Save key in this browser</button>
+      <button id="btn-clear-key" class="secondary">Forget key</button>
+      <button id="btn-ai">✨ Generate with AI</button>
+    </div>
+    <p class="hint">The key is stored only in your browser (localStorage) and sent only to Google's Gemini API when you press Generate. Without a key everything above still works — sample deck, manual cards, and notes parsing need no key at all. Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.</p>
+    <div id="status-ai" class="status" aria-live="polite"></div>
+  </section>
+
+  <details>
+    <summary>How the notes parser works</summary>
+    <p>Lines starting <code>Q:</code> followed by <code>A:</code> become question/answer cards. <code>Term - definition</code>, <code>Term: definition</code> and <code>Front | Back</code> lines become term cards. Any leftover paragraph is split into sentences and turned into fill-in-the-blank (cloze) cards, blanking the longest word. Up to 50 cards per paste.</p>
+  </details>
+
+  <footer>
+    Free forever, no account, no server — the whole tool is one static page.
+    Sample deck: 10 real cards from <i>Pride and Prejudice</i> by Jane Austen (1813, public domain).
+    Not affiliated with Anki, Google, or Quizlet.
+    <p class="support">
+      <a href="https://github.com/mrabr381/ai-flashcard-maker" target="_blank" rel="noopener">⭐ Star on GitHub</a>
+      <a href="https://www.buymeacoffee.com/muhammadabubakar" target="_blank" rel="noopener"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="40"></a>
+    </p>
+  </footer>
+</main>
+
+<script src="flashcards.js"></script>
+<script>
+(function () {
+  'use strict';
+  var F = window.Flashcards;
+  var deck = F.createDeck([]);
+  var KEY_NAME = 'afm-gemini-key';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var notesEl = $('notes'), cardEl = $('card'), cardSide = $('card-side'), cardText = $('card-text'),
+      counterEl = $('counter'), barFill = $('bar-fill'),
+      statusNotes = $('status-notes'), statusAi = $('status-ai'),
+      keyEl = $('gemini-key');
+
+  notesEl.value = F.SAMPLE_NOTES;
+  var savedKey = null;
+  try { savedKey = localStorage.getItem(KEY_NAME); } catch (e) {}
+  if (savedKey) keyEl.value = savedKey;
+
+  function setStatus(el, msg, kind) { el.textContent = msg; el.className = 'status' + (kind ? ' ' + kind : ''); }
+
+  function render() {
+    var c = F.current(deck), p = F.progress(deck);
+    counterEl.textContent = p.current + ' / ' + p.total;
+    barFill.style.width = p.total ? Math.round(p.current / p.total * 100) + '%' : '0';
+    if (!c) {
+      cardSide.textContent = 'Front';
+      cardText.textContent = 'No cards yet — make some above, or load the sample deck.';
+      return;
+    }
+    cardSide.textContent = deck.flipped ? 'Back' : 'Front';
+    cardText.textContent = deck.flipped ? c.back : c.front;
+  }
+
+  function setDeck(cards, msg) {
+    deck = F.createDeck(cards);
+    render();
+    if (msg) setStatus(statusNotes, msg, 'ok');
+  }
+
+  $('btn-make').addEventListener('click', function () {
+    var cards = F.parseNotes(notesEl.value);
+    if (!cards.length) { setStatus(statusNotes, 'No cards found — try Q: / A: lines, "Term - definition", or a paragraph of text.', 'err'); return; }
+    setDeck(cards, 'Made ' + cards.length + ' card' + (cards.length === 1 ? '' : 's') + ' from your notes. Click a card to flip.');
+  });
+
+  $('btn-sample').addEventListener('click', function () {
+    notesEl.value = F.SAMPLE_NOTES;
+    setDeck(F.SAMPLE_DECK.slice(), 'Loaded the sample deck: 10 real cards from Pride and Prejudice (Jane Austen, 1813).');
+  });
+
+  function doFlip() { if (deck.cards.length) { F.flip(deck); render(); } }
+  cardEl.addEventListener('click', doFlip);
+  cardEl.addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); doFlip(); } });
+  document.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if (e.key === 'ArrowRight') { F.next(deck); render(); }
+    if (e.key === 'ArrowLeft') { F.prev(deck); render(); }
+    if (e.key === ' ') { e.preventDefault(); doFlip(); }
+  });
+  $('btn-next').addEventListener('click', function () { F.next(deck); render(); });
+  $('btn-prev').addEventListener('click', function () { F.prev(deck); render(); });
+  $('btn-shuffle').addEventListener('click', function () {
+    if (!deck.cards.length) return;
+    F.shuffle(deck); render();
+    setStatus(statusNotes, 'Shuffled ' + deck.cards.length + ' cards.', 'ok');
+  });
+
+  $('btn-add').addEventListener('click', function () {
+    try {
+      deck = F.createDeck(F.addCard(deck.cards, $('manual-front').value, $('manual-back').value));
+      deck.index = deck.cards.length - 1;
+      $('manual-front').value = ''; $('manual-back').value = '';
+      render();
+      setStatus(statusNotes, 'Card added — deck now has ' + deck.cards.length + ' cards.', 'ok');
+    } catch (err) { setStatus(statusNotes, err.message, 'err'); }
+  });
+
+  $('btn-export').addEventListener('click', function () {
+    if (!deck.cards.length) { setStatus(statusNotes, 'Nothing to export — make or load some cards first.', 'err'); return; }
+    var blob = new Blob([F.toAnkiCSV(deck.cards)], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'flashcards-anki.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    setStatus(statusNotes, 'Exported ' + deck.cards.length + ' cards as flashcards-anki.csv — import it into Anki (File → Import, comma-separated).', 'ok');
+  });
+
+  $('btn-save-key').addEventListener('click', function () {
+    try { localStorage.setItem(KEY_NAME, keyEl.value.trim()); setStatus(statusAi, 'Key saved in this browser only.', 'ok'); }
+    catch (e) { setStatus(statusAi, 'Could not save the key in this browser.', 'err'); }
+  });
+  $('btn-clear-key').addEventListener('click', function () {
+    try { localStorage.removeItem(KEY_NAME); } catch (e) {}
+    keyEl.value = '';
+    setStatus(statusAi, 'Key forgotten.', 'ok');
+  });
+
+  $('btn-ai').addEventListener('click', async function () {
+    var key = keyEl.value.trim();
+    var notes = notesEl.value.trim();
+    if (!key) { setStatus(statusAi, 'Paste your free Gemini key first (Google AI Studio). No key? Use Make flashcards instead — it needs no key.', 'err'); return; }
+    if (!notes) { setStatus(statusAi, 'Paste some notes first.', 'err'); return; }
+    var btn = $('btn-ai'); btn.disabled = true;
+    setStatus(statusAi, 'Asking Gemini…');
+    try {
+      var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + encodeURIComponent(key), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: F.geminiPrompt(notes) }] }] })
+      });
+      if (!res.ok) throw new Error('Gemini returned HTTP ' + res.status + ' — check the key, or try again later.');
+      var cards = F.parseGeminiResponse(await res.json());
+      setDeck(cards, '');
+      setStatus(statusAi, 'Gemini made ' + cards.length + ' cards. Review them, then export to Anki.', 'ok');
+    } catch (err) {
+      setStatus(statusAi, 'AI generation failed: ' + err.message, 'err');
+    } finally { btn.disabled = false; }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
